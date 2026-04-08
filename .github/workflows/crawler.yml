@@ -2,16 +2,16 @@ name: Job Crawler
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # Every 15 minutes
-  workflow_dispatch:           # Manual trigger from GitHub UI
+    - cron: "0 * * * *"   # Every hour
+  workflow_dispatch:        # Manual trigger from Actions tab
 
 permissions:
-  contents: write              # Needed to commit seen_jobs.json updates
+  contents: write
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repo
@@ -25,8 +25,11 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: pip install -r requirements.txt
+
+      - name: Install Playwright browser
+        run: playwright install chromium --with-deps
 
       - name: Run crawler
         env:
@@ -35,7 +38,7 @@ jobs:
           GITHUB_ACTIONS: "true"
         run: python main.py
 
-      - name: Save updated seen_jobs.json
+      - name: Save seen jobs
         run: |
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions Bot"

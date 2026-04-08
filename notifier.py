@@ -1,29 +1,44 @@
 import os
 import requests
+from datetime import datetime, timezone
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
 
+def _time_ago(iso_str: str) -> str:
+    try:
+        posted = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        diff = datetime.now(timezone.utc) - posted
+        mins = int(diff.total_seconds() / 60)
+        if mins < 1:
+            return "just now"
+        if mins < 60:
+            return f"{mins} min ago"
+        return f"{mins // 60}h {mins % 60}m ago"
+    except Exception:
+        return "recently"
+
+
 def send_job_alert(job: dict) -> bool:
-    """Send a single job alert to Telegram."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-
     if not token or not chat_id:
-        print("[notifier] Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
+        print("[notifier] Missing credentials")
         return False
 
-    level_tag = job.get("level", "").upper()
-    level_line = f"📊 <b>Level:</b> {level_tag}\n" if level_tag else ""
+    posted_label = _time_ago(job.get("posted", ""))
 
+    sep = "-" * 30
     message = (
-        f"🆕 <b>New Job Alert!</b>\n\n"
-        f"💼 <b>{job['title']}</b>\n"
-        f"🏢 {job['company']}\n"
-        f"📍 {job['location']}\n"
-        f"🔗 <a href=\"{job['url']}\">Apply Here</a>\n"
-        f"{level_line}"
-        f"📡 Source: {job['source']}"
+        f"<b>Job Alert</b>\n"
+        f"{sep}\n"
+        f"<b>Role</b>      {job['title']}\n"
+        f"<b>Company</b>   {job['company']}\n"
+        f"<b>Location</b>  {job['location']}\n"
+        f"<b>Posted</b>    {posted_label}\n"
+        f"<b>Source</b>    {job['source']}\n"
+        f"{sep}\n"
+        f"<a href=\"{job['url']}\">View and Apply</a>"
     )
 
     resp = requests.post(
@@ -32,31 +47,27 @@ def send_job_alert(job: dict) -> bool:
             "chat_id": chat_id,
             "text": message,
             "parse_mode": "HTML",
-            "disable_web_page_preview": False,
+            "disable_web_page_preview": True,
         },
         timeout=10,
     )
-
-    if not resp.ok:
-        print(f"[notifier] Telegram error: {resp.status_code} {resp.text}")
-
     return resp.ok
 
 
 def send_summary(total_new: int) -> None:
-    """Send a summary message when the run finds no new jobs."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         return
 
-    if total_new == 0:
-        message = "✅ Crawl complete — no new jobs found this run."
-    else:
-        message = f"✅ Crawl complete — sent <b>{total_new}</b> new job alert(s)."
+    msg = (
+        f"Scan complete — {total_new} new job(s) found."
+        if total_new > 0
+        else "Scan complete — no new jobs in the last hour."
+    )
 
     requests.post(
         TELEGRAM_API.format(token=token),
-        json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"},
+        json={"chat_id": chat_id, "text": msg},
         timeout=10,
     )
